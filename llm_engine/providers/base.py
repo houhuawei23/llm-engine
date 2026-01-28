@@ -113,7 +113,7 @@ class BaseLLMProvider(ABC):
             # Get provider name from config.provider enum
             provider_name = self.config.provider.value.lower()
             model_name = self.config.model_name
-            
+
             # Load model info from providers.yml
             model_info = get_model_info(provider_name, model_name)
             if model_info:
@@ -196,7 +196,11 @@ class BaseLLMProvider(ABC):
             except Exception as e:
                 # Other errors (API errors, auth errors, etc.) don't retry, raise directly
                 error_msg = str(e)
-                if "API error" in error_msg.lower() or "key" in error_msg.lower() or "auth" in error_msg.lower():
+                if (
+                    "API error" in error_msg.lower()
+                    or "key" in error_msg.lower()
+                    or "auth" in error_msg.lower()
+                ):
                     logger.error(f"API error (no retry): {error_msg}")
                     raise
                 # Other unknown errors also retry
@@ -221,7 +225,7 @@ class BaseLLMProvider(ABC):
         temperature: Optional[float] = None,
         model: Optional[str] = None,
         stream: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Union[str, Generator[str, None, None]]:
         """
         Call LLM API (synchronous).
@@ -244,11 +248,7 @@ class BaseLLMProvider(ABC):
             RuntimeError: If API call fails
         """
         # Validate inputs
-        if messages:
-            api_messages = messages
-        elif prompt:
-            api_messages = [{"role": "user", "content": prompt}]
-        else:
+        if not messages and not prompt:
             raise ValueError("Either 'prompt' or 'messages' must be provided")
 
         # Extract system prompt if present
@@ -284,9 +284,7 @@ class BaseLLMProvider(ABC):
             return self._sync_stream_generate(user_prompt, system_prompt, temp, model_name, loop)
         else:
             # Return complete response
-            return loop.run_until_complete(
-                self.generate(user_prompt, system_prompt)
-            )
+            return loop.run_until_complete(self.generate(user_prompt, system_prompt))
 
     def _sync_stream_generate(
         self, prompt: str, system_prompt: Optional[str], temperature: float, model: str, loop
@@ -304,6 +302,7 @@ class BaseLLMProvider(ABC):
         Yields:
             Text chunks
         """
+
         async def _async_gen():
             async for chunk, _ in self.generate_stream(prompt, system_prompt):
                 yield chunk

@@ -42,7 +42,7 @@ Before publishing, ensure:
    ```bash
    # Check the contents of the wheel
    unzip -l dist/llm_engine-*.whl
-   
+
    # Check the source distribution
    tar -tzf dist/llm-engine-*.tar.gz | head -20
    ```

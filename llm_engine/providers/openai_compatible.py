@@ -10,7 +10,7 @@ from typing import AsyncIterator, Dict, List, Optional, Tuple
 
 import litellm
 from loguru import logger
-from openai import OpenAI, APIError, RateLimitError, AuthenticationError
+from openai import APIError, AuthenticationError, OpenAI, RateLimitError
 
 from llm_engine.config import LLMConfig
 from llm_engine.exceptions import LLMProviderError
@@ -206,9 +206,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             # Catch all exceptions and log detailed information
             error_msg = str(e)
             if "timeout" in error_msg.lower() or isinstance(e, asyncio.TimeoutError):
-                raise Exception(
-                    f"Request timeout (timeout: {self.config.timeout}s): {e}"
-                ) from e
+                raise Exception(f"Request timeout (timeout: {self.config.timeout}s): {e}") from e
             logger.exception(f"{self.provider_name} API call failed: {e}")
             raise LLMProviderError(f"{self.provider_name} API call failed: {error_msg}") from e
 
@@ -280,9 +278,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             # Catch all exceptions and log detailed information
             error_msg = str(e)
             if "timeout" in error_msg.lower() or isinstance(e, asyncio.TimeoutError):
-                raise Exception(
-                    f"Request timeout (timeout: {self.config.timeout}s): {e}"
-                ) from e
+                raise Exception(f"Request timeout (timeout: {self.config.timeout}s): {e}") from e
             logger.exception(f"{self.provider_name} API call failed: {e}")
             raise LLMProviderError(f"{self.provider_name} API call failed: {error_msg}") from e
 
@@ -294,7 +290,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         temperature: Optional[float] = None,
         model: Optional[str] = None,
         stream: bool = False,
-        **kwargs
+        **kwargs,
     ) -> str:
         """
         Call OpenAI-compatible API (synchronous).
@@ -368,14 +364,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
         except AuthenticationError as e:
             logger.error(f"Authentication failed: {e}")
-            raise RuntimeError(
-                f"API authentication failed. Please check your API key."
-            ) from e
+            raise RuntimeError("API authentication failed. Please check your API key.") from e
         except RateLimitError as e:
             logger.error(f"Rate limit exceeded: {e}")
-            raise RuntimeError(
-                f"API rate limit exceeded. Please try again later."
-            ) from e
+            raise RuntimeError("API rate limit exceeded. Please try again later.") from e
         except APIError as e:
             logger.error(f"API error: {e}")
             raise RuntimeError(f"API error: {e}") from e
@@ -402,10 +394,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         logger.debug(f"Received response: {len(content)} characters")
         return content.strip()
 
-    def _stream_response(
-        self,
-        params: Dict
-    ):
+    def _stream_response(self, params: Dict):
         """
         Stream response from API.
 

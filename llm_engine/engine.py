@@ -10,7 +10,7 @@ from typing import AsyncIterator, Optional, Tuple
 from loguru import logger
 
 from llm_engine.config import LLMConfig, LLMProvider
-from llm_engine.config_loader import create_llm_config_from_provider, get_model_info
+from llm_engine.config_loader import get_model_info
 from llm_engine.exceptions import LLMProviderError
 from llm_engine.providers.base import BaseLLMProvider
 from llm_engine.providers.openai_compatible import OpenAICompatibleProvider
@@ -116,7 +116,7 @@ class DeepSeekProvider(OpenAICompatibleProvider):
                 if isinstance(content, str) and "json" in content.lower():
                     has_json_keyword = True
                     break
-            
+
             # Only add response_format if json keyword is found
             # This ensures we only use JSON mode when explicitly requested (e.g., in ai-anki-cards)
             # and satisfies DeepSeek API requirement that prompt must contain "json"

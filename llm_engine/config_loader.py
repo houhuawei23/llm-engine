@@ -122,9 +122,7 @@ def create_llm_config_from_provider(
 
     if provider_name not in providers:
         available = ", ".join(providers.keys())
-        raise ValueError(
-            f"Provider '{provider_name}' not found. Available providers: {available}"
-        )
+        raise ValueError(f"Provider '{provider_name}' not found. Available providers: {available}")
 
     provider_config = providers[provider_name]
 
@@ -169,7 +167,9 @@ def create_llm_config_from_provider(
     return LLMConfig(**llm_config_dict)
 
 
-def get_model_info(provider_name: str, model_name: str, config_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+def get_model_info(
+    provider_name: str, model_name: str, config_path: Optional[Path] = None
+) -> Optional[Dict[str, Any]]:
     """
     Get model-specific information from configuration.
 
