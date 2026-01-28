@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include pyproject.toml
+recursive-include llm_engine *.py
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .git*
