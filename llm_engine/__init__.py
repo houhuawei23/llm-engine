@@ -23,7 +23,7 @@ from llm_engine.factory import ProviderAdapter, create_provider_adapter, create_
 from llm_engine.providers.base import BaseLLMProvider
 from llm_engine.providers.openai_compatible import OpenAICompatibleProvider
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __all__ = [
     "LLMConfig",
