@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-api-engine"
-version = "0.1.1"
+version = "0.1.2"
 description = "Unified LLM API provider and engine library"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -36,10 +36,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/llm-engine"
-Documentation = "https://github.com/yourusername/llm-engine#readme"
-Repository = "https://github.com/yourusername/llm-engine"
-Issues = "https://github.com/yourusername/llm-engine/issues"
+Homepage = "https://github.com/houhuawei23/llm-engine"
+Documentation = "https://github.com/houhuawei23/llm-engine#readme"
+Repository = "https://github.com/houhuawei23/llm-engine"
+Issues = "https://github.com/houhuawei23/llm-engine/issues"
 
 [project.optional-dependencies]
 dev = [
