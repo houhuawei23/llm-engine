@@ -145,7 +145,7 @@ class TestOpenAICompatibleProvider:
     def test_call_complete_response(self, llm_config):
         """Test call method for complete response."""
         provider = OpenAIProvider(llm_config)
-        provider._complete_response = Mock(return_value="Test response")
+        provider._complete_response = Mock(return_value=("Test response", None))
         result = provider.call(prompt="test")
         assert result == "Test response"
 
@@ -160,7 +160,7 @@ class TestOpenAICompatibleProvider:
     def test_call_with_messages(self, llm_config):
         """Test call method with messages."""
         provider = OpenAIProvider(llm_config)
-        provider._complete_response = Mock(return_value="Test response")
+        provider._complete_response = Mock(return_value=("Test response", None))
         messages = [{"role": "user", "content": "test"}]
         result = provider.call(messages=messages)
         assert result == "Test response"
@@ -175,7 +175,7 @@ class TestOpenAICompatibleProvider:
         provider.client.chat.completions.create = Mock(return_value=mock_response)
 
         result = provider._complete_response({"model": "gpt-4", "messages": []})
-        assert result == "Test response"
+        assert result == ("Test response", None)
 
     def test_stream_response(self, llm_config):
         """Test _stream_response method."""

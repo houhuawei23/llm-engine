@@ -6,7 +6,8 @@ DeepSeekProvider, CustomProvider, etc.
 """
 
 import asyncio
-from typing import AsyncIterator, Dict, List, Optional, Tuple
+import time
+from typing import AsyncIterator, Dict, List, Optional, Tuple, Union
 
 import litellm
 from loguru import logger
@@ -262,8 +263,23 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
         try:
             # LiteLLM uses acompletion with stream=True for async streaming calls
-            response_stream = await litellm.acompletion(**litellm_kwargs)
+            # 使用 asyncio.wait_for 确保超时机制可靠
+            # 给 litellm 的超时留一些缓冲时间（+5秒）
+            timeout_seconds = self.config.timeout + 5 if self.config.timeout else 65
+            response_stream = await asyncio.wait_for(
+                litellm.acompletion(**litellm_kwargs),
+                timeout=timeout_seconds
+            )
+            # 迭代响应流，添加超时检查
+            iteration_start_time = time.time()
             async for chunk in response_stream:
+                # 检查是否超时（在每次迭代时检查）
+                current_time = time.time()
+                elapsed = current_time - iteration_start_time
+                if elapsed > timeout_seconds:
+                    raise asyncio.TimeoutError(
+                        f"Stream iteration timeout after {elapsed:.1f}s (timeout: {timeout_seconds}s)"
+                    )
                 if not chunk or not chunk.choices or len(chunk.choices) == 0:
                     continue
 
@@ -291,7 +307,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         model: Optional[str] = None,
         stream: bool = False,
         **kwargs,
-    ) -> str:
+    ) -> Union[str, Tuple[str, Optional[str]]]:
         """
         Call OpenAI-compatible API (synchronous).
 
@@ -303,15 +319,20 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             temperature: Sampling temperature
             model: Model name override
             stream: Whether to stream response
-            **kwargs: Additional parameters (max_tokens, top_p, etc.)
+            **kwargs: Additional parameters (max_tokens, top_p, return_reasoning, etc.)
 
         Returns:
-            Response string or streaming generator
+            Response string, or ``(content, reasoning)`` when ``return_reasoning=True`` (non-stream),
+            or a streaming generator when ``stream=True``. With ``stream=True`` and
+            ``return_reasoning=True``, the generator yields ``(content_delta, reasoning_delta)``
+            pairs; otherwise it yields content string chunks only.
 
         Raises:
             ValueError: If neither prompt nor messages provided
             RuntimeError: If API call fails
         """
+        return_reasoning = bool(kwargs.pop("return_reasoning", False))
+
         # Validate inputs
         if messages:
             api_messages = messages
@@ -351,16 +372,32 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         if "response_format" in payload:
             params["response_format"] = payload["response_format"]
 
-        logger.debug(
-            f"Calling {self.provider_name} API with model={model_name}, "
-            f"temperature={temp}, stream={stream}"
-        )
+        # Build detailed parameter string for logging
+        param_details = [
+            f"provider={self.provider_name}",
+            f"model={model_name}",
+            f"temperature={temp}",
+        ]
+        if params.get("max_tokens") is not None:
+            param_details.append(f"max_tokens={params['max_tokens']}")
+        if params.get("top_p") is not None:
+            param_details.append(f"top_p={params['top_p']}")
+        if params.get("presence_penalty") is not None:
+            param_details.append(f"presence_penalty={params['presence_penalty']}")
+        if params.get("frequency_penalty") is not None:
+            param_details.append(f"frequency_penalty={params['frequency_penalty']}")
+        param_details.append(f"stream={stream}")
+
+        logger.debug(f"Calling API with {', '.join(param_details)}")
 
         try:
             if stream:
-                return self._stream_response(params)
+                return self._stream_response(params, return_reasoning=return_reasoning)
             else:
-                return self._complete_response(params)
+                content, reasoning = self._complete_response(params)
+                if return_reasoning:
+                    return (content, reasoning)
+                return content
 
         except AuthenticationError as e:
             logger.error(f"Authentication failed: {e}")
@@ -369,13 +406,18 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             logger.error(f"Rate limit exceeded: {e}")
             raise RuntimeError("API rate limit exceeded. Please try again later.") from e
         except APIError as e:
-            logger.error(f"API error: {e}")
-            raise RuntimeError(f"API error: {e}") from e
+            mt = params.get("max_tokens")
+            logger.error(
+                f"API error: {e}  (model={model_name!r}, max_tokens={mt})"
+            )
+            raise RuntimeError(
+                f"API error: {e}  (model={model_name!r}, max_tokens={mt})"
+            ) from e
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             raise RuntimeError(f"API call failed: {e}") from e
 
-    def _complete_response(self, params: Dict) -> str:
+    def _complete_response(self, params: Dict) -> Tuple[str, Optional[str]]:
         """
         Get complete (non-streaming) response.
 
@@ -383,33 +425,62 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             params: API parameters
 
         Returns:
-            Response text
+            ``(content, reasoning)`` — reasoning is set for models that
+            return ``reasoning_content`` (e.g. DeepSeek reasoner).
         """
         # Remove stream parameter for non-streaming call
         params = {k: v for k, v in params.items() if k != "stream"}
 
         response = self.client.chat.completions.create(**params)
-        content = response.choices[0].message.content or ""
+        msg = response.choices[0].message
+        content = (msg.content or "").strip()
+        reasoning: Optional[str] = None
+        rc = getattr(msg, "reasoning_content", None)
+        if isinstance(rc, str) and rc.strip():
+            reasoning = rc.strip()
+        else:
+            try:
+                dumped = msg.model_dump() if hasattr(msg, "model_dump") else {}
+                if isinstance(dumped, dict):
+                    rc2 = dumped.get("reasoning_content")
+                    if isinstance(rc2, str) and rc2.strip():
+                        reasoning = rc2.strip()
+            except Exception:
+                pass
 
-        logger.debug(f"Received response: {len(content)} characters")
-        return content.strip()
+        logger.debug(
+            f"Received response: {len(content)} chars content"
+            + (f", {len(reasoning)} chars reasoning" if reasoning else "")
+        )
+        return content, reasoning
 
-    def _stream_response(self, params: Dict):
+    def _stream_response(self, params: Dict, *, return_reasoning: bool = False):
         """
         Stream response from API.
 
         Args:
             params: API parameters
+            return_reasoning: If True, yield ``(content_delta, reasoning_delta)`` for
+                models that stream ``reasoning_content`` (e.g. DeepSeek reasoner).
+                If False, yield content-only strings (backward compatible).
 
         Yields:
-            Text chunks from the streaming response
+            Text chunks, or ``(content_delta, reasoning_delta)`` when *return_reasoning*
+            is True.
         """
         try:
             stream = self.client.chat.completions.create(**params)
             for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
-                    if delta and delta.content:
+                    if not delta:
+                        continue
+                    if return_reasoning:
+                        c = delta.content or ""
+                        r = self._delta_reasoning_content(delta)
+                        if c or r:
+                            yield (c, r)
+                    elif delta.content:
                         yield delta.content
         except GeneratorExit:
             # Handle generator cleanup
@@ -418,3 +489,20 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             raise RuntimeError(f"Stream failed: {e}") from e
+
+    @staticmethod
+    def _delta_reasoning_content(delta) -> str:
+        """Extract reasoning stream piece from a chat completion delta (DeepSeek, etc.)."""
+        rc = getattr(delta, "reasoning_content", None)
+        if isinstance(rc, str) and rc:
+            return rc
+        try:
+            if hasattr(delta, "model_dump"):
+                dumped = delta.model_dump()
+                if isinstance(dumped, dict):
+                    rc2 = dumped.get("reasoning_content")
+                    if isinstance(rc2, str) and rc2:
+                        return rc2
+        except Exception:
+            pass
+        return ""

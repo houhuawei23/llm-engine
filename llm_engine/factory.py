@@ -8,7 +8,7 @@ making it easy to integrate llm_engine with other applications.
 from typing import Any, Dict, List, Optional, Protocol, Union
 
 from llm_engine.config import LLMConfig, LLMProvider
-from llm_engine.engine import CustomProvider, DeepSeekProvider, OpenAIProvider
+from llm_engine.engine import AnthropicProvider, CustomProvider, DeepSeekProvider, OpenAIProvider
 from llm_engine.providers.base import BaseLLMProvider
 
 
@@ -41,7 +41,7 @@ def create_provider_from_config(
         default_model: Default model name (if None, uses first model from models list)
 
     Returns:
-        LLM provider instance (DeepSeekProvider, OpenAIProvider, or CustomProvider)
+        LLM provider instance (DeepSeekProvider, OpenAIProvider, AnthropicProvider, or CustomProvider)
 
     Raises:
         ValueError: If configuration is invalid or provider is unsupported
@@ -101,6 +101,9 @@ def create_provider_from_config(
     provider_map: Dict[str, LLMProvider] = {
         "deepseek": LLMProvider.DEEPSEEK,
         "openai": LLMProvider.OPENAI,
+        "anthropic": LLMProvider.ANTHROPIC,
+        "kimi": LLMProvider.ANTHROPIC,  # Kimi Code API uses Anthropic protocol
+        "kimi-code": LLMProvider.ANTHROPIC,  # Kimi Code API uses Anthropic protocol
         "qwen": LLMProvider.CUSTOM,  # Qwen uses custom provider
     }
     provider_enum = provider_map.get(api_provider, LLMProvider.CUSTOM)
@@ -122,6 +125,9 @@ def create_provider_from_config(
         return DeepSeekProvider(llm_config)
     elif api_provider == "openai":
         return OpenAIProvider(llm_config)
+    elif api_provider in ("anthropic", "kimi", "kimi-code"):
+        # Kimi Code API uses Anthropic protocol
+        return AnthropicProvider(llm_config)
     else:
         # Use CustomProvider for other providers (e.g., qwen)
         return CustomProvider(llm_config)

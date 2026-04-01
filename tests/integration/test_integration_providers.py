@@ -102,7 +102,7 @@ class TestProviderIntegration:
     @patch("llm_engine.providers.openai_compatible.OpenAICompatibleProvider._complete_response")
     def test_provider_synchronous_call(self, mock_complete_response, llm_config):
         """Test provider synchronous call method."""
-        mock_complete_response.return_value = "Sync response"
+        mock_complete_response.return_value = ("Sync response", None)
         provider = DeepSeekProvider(llm_config)
 
         result = provider.call(prompt="test prompt")
@@ -111,7 +111,7 @@ class TestProviderIntegration:
     @patch("llm_engine.providers.openai_compatible.OpenAICompatibleProvider._complete_response")
     def test_provider_synchronous_call_with_messages(self, mock_complete_response, llm_config):
         """Test provider synchronous call with messages."""
-        mock_complete_response.return_value = "Sync response"
+        mock_complete_response.return_value = ("Sync response", None)
         provider = DeepSeekProvider(llm_config)
 
         messages = [

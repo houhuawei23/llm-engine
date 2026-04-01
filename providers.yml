@@ -20,6 +20,21 @@ providers:
           output: 3 # ￥/百万
         functions:
           json_output: true
+      - name: "deepseek-reasoner"
+        context_length: 128000
+        max_output:
+          default: 4000
+          maximum: 8000
+        speed_tokens_per_second: 30
+        token_per_character:
+          english: 0.3
+          chinese: 0.6
+        pricing_per_million_tokens: # 人民币/元
+          input: 2 # ￥/百万，cache miss
+          input_cache_hit: 0.2 # ￥/百万
+          output: 3 # ￥/百万
+        functions:
+          json_output: true
   openai:
     base_url: "https://api.openai.com/v1"
     api_key: ${OPENAI_API_KEY}
@@ -41,3 +56,26 @@ providers:
     models:
       - name: "moonshot-v1-8k"
       - name: "moonshot-v1-32k"
+  kimi-code:
+    base_url: "https://api.kimi.com/coding"
+    api_key: "${KIMI_CODE_API_KEY}"
+    default_model: "kimi-k2-0711-preview"
+    models:
+      - name: "kimi-k2-0711-preview"
+        context_length: 256000
+        max_output:
+          default: 8000
+          maximum: 32000
+        speed_tokens_per_second: 40
+      - name: "kimi-k2-0711-preview-longcontext"
+        context_length: 2000000
+        max_output:
+          default: 8000
+          maximum: 32000
+        speed_tokens_per_second: 30
+      - name: "kimi-k2.5-preview"
+        context_length: 256000
+        max_output:
+          default: 8000
+          maximum: 32000
+        speed_tokens_per_second: 50

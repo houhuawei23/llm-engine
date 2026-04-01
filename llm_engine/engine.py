@@ -5,7 +5,7 @@ Automatically selects appropriate provider based on configuration and provides u
 """
 
 import os
-from typing import AsyncIterator, Optional, Tuple
+from typing import AsyncIterator, List, Optional, Tuple
 
 from loguru import logger
 
@@ -14,6 +14,7 @@ from llm_engine.config_loader import get_model_info
 from llm_engine.exceptions import LLMProviderError
 from llm_engine.providers.base import BaseLLMProvider
 from llm_engine.providers.openai_compatible import OpenAICompatibleProvider
+from openai import OpenAI
 
 
 class OpenAIProvider(OpenAICompatibleProvider):
@@ -48,6 +49,63 @@ class OpenAIProvider(OpenAICompatibleProvider):
             payload["presence_penalty"] = self.config.presence_penalty
         if hasattr(self.config, "frequency_penalty"):
             payload["frequency_penalty"] = self.config.frequency_penalty
+
+
+class AnthropicProvider(OpenAICompatibleProvider):
+    """Anthropic API provider (Claude models)
+
+    Note: For Kimi Code API, this provider uses OpenAI-compatible format
+    since Kimi Code API is compatible with OpenAI's chat completions API.
+    """
+
+    def _get_env_api_key(self) -> Optional[str]:
+        """Get Anthropic API key from environment variable"""
+        # For Kimi Code API, use KIMI_CODE_API_KEY
+        base_url = self.config.base_url or self._get_default_base_url()
+        if base_url and "kimi.com" in base_url:
+            return os.getenv("KIMI_CODE_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        return os.getenv("ANTHROPIC_API_KEY")
+
+    def _is_kimi_code(self) -> bool:
+        """Check if this is Kimi Code API endpoint."""
+        return "kimi.com" in (self.config.base_url or "")
+
+    @property
+    def client(self):
+        """Get or create OpenAI client with custom headers for Kimi Code API."""
+        if self._client is None:
+            client_kwargs = {
+                "api_key": self.api_key,
+                "base_url": self.base_url,
+                "timeout": self.config.timeout,
+            }
+            # Add User-Agent header for Kimi Code API
+            if self._is_kimi_code():
+                client_kwargs["default_headers"] = {
+                    "User-Agent": "claude-code/1.0.0"
+                }
+            self._client = OpenAI(**client_kwargs)
+        return self._client
+
+    def _get_default_base_url(self) -> str:
+        """Get Anthropic default API URL"""
+        return "https://api.anthropic.com/v1"
+
+    def _get_provider_name(self) -> str:
+        """Get provider name"""
+        return "Anthropic"
+
+    def _get_litellm_model_name(self) -> str:
+        """Get LiteLLM model name"""
+        # For Kimi Code API, use openai/ prefix (OpenAI-compatible)
+        if "kimi.com" in self.base_url:
+            return f"openai/{self.config.model_name}"
+        # LiteLLM format: anthropic/model_name
+        return f"anthropic/{self.config.model_name}"
+
+    def _get_litellm_api_base(self) -> Optional[str]:
+        """Get LiteLLM API Base URL."""
+        return self.base_url
 
 
 class DeepSeekProvider(OpenAICompatibleProvider):
@@ -262,6 +320,7 @@ class LLMEngine:
         """
         provider_map = {
             LLMProvider.OPENAI: OpenAIProvider,
+            LLMProvider.ANTHROPIC: AnthropicProvider,
             LLMProvider.DEEPSEEK: DeepSeekProvider,
             LLMProvider.OLLAMA: OllamaProvider,
             LLMProvider.CUSTOM: CustomProvider,

@@ -180,7 +180,7 @@ class TestEndToEndFlow:
     @patch("llm_engine.providers.openai_compatible.OpenAICompatibleProvider._complete_response")
     def test_end_to_end_synchronous_call(self, mock_complete_response, llm_config):
         """Test end-to-end synchronous call flow."""
-        mock_complete_response.return_value = "Sync response"
+        mock_complete_response.return_value = ("Sync response", None)
         engine = LLMEngine(llm_config)
 
         result = engine.provider.call(prompt="test prompt")

@@ -14,6 +14,9 @@ from loguru import logger
 
 from llm_engine.config import LLMConfig, LLMProvider
 
+# One WARNING per missing env var per process (parallel tasks reload YAML otherwise).
+_WARNED_UNSET_ENV_VARS: set[str] = set()
+
 
 def resolve_env_vars(value: Any) -> Any:
     """
@@ -38,7 +41,9 @@ def resolve_env_vars(value: Any) -> Any:
                 if env_value:
                     value = value.replace(f"${{{var_name}}}", env_value)
                 else:
-                    logger.warning(f"Environment variable {var_name} not set")
+                    if var_name not in _WARNED_UNSET_ENV_VARS:
+                        _WARNED_UNSET_ENV_VARS.add(var_name)
+                        logger.warning(f"Environment variable {var_name} not set")
 
         return value
     elif isinstance(value, dict):
@@ -91,9 +96,7 @@ def load_providers_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
         return {}
 
     # Resolve environment variable references
-    config_dict = resolve_env_vars(config_dict)
-
-    return config_dict
+    return resolve_env_vars(config_dict)
 
 
 def create_llm_config_from_provider(

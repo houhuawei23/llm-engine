@@ -7,7 +7,7 @@ Defines data structures for LLM configuration, provider settings, and model info
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class LLMProvider(str, Enum):
@@ -27,6 +27,8 @@ class LLMConfig(BaseModel):
 
     Contains provider, API key, request parameters, and other configuration.
     """
+
+    model_config = ConfigDict(protected_namespaces=())
 
     provider: LLMProvider = Field(default=LLMProvider.DEEPSEEK, description="LLM provider")
     model_name: str = Field(default="deepseek-chat", description="Model name")
