@@ -6,7 +6,6 @@ DeepSeekProvider, CustomProvider, etc.
 """
 
 import asyncio
-import time
 from typing import AsyncIterator, Dict, List, Optional, Tuple, Union
 
 import litellm
@@ -16,6 +15,7 @@ from openai import APIError, AuthenticationError, OpenAI, RateLimitError
 from llm_engine.config import LLMConfig
 from llm_engine.exceptions import LLMProviderError
 from llm_engine.providers.base import BaseLLMProvider
+from llm_engine.providers.litellm_helpers import build_acompletion_kwargs, map_litellm_exception
 
 
 class OpenAICompatibleProvider(BaseLLMProvider):
@@ -139,6 +139,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         """
         return self.base_url
 
+    def _requires_api_key(self) -> bool:
+        """Whether to require a non-empty API key before async LiteLLM calls (Ollama: False)."""
+        return True
+
     @property
     def client(self) -> OpenAI:
         """Get or create OpenAI client (for synchronous calls)."""
@@ -166,35 +170,21 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             ValueError: If API key not set
             Exception: If API call fails
         """
-        if not self.api_key:
+        if self._requires_api_key() and not self.api_key:
             raise ValueError(f"{self.provider_name} API key not set")
 
         messages = self._build_messages(prompt, system_prompt)
         payload = self._build_payload(messages, stream=False)
 
-        # Build LiteLLM call parameters
-        litellm_kwargs = {
-            "model": self._get_litellm_model_name(),
-            "messages": messages,
-            "temperature": payload.get("temperature"),
-            "max_tokens": payload.get("max_tokens"),
-            "top_p": payload.get("top_p"),
-            "api_key": self._get_litellm_api_key(),
-            "timeout": self.config.timeout,
-        }
-
-        # Add API base URL (if provided)
-        api_base = self._get_litellm_api_base()
-        if api_base:
-            litellm_kwargs["api_base"] = api_base
-
-        # Add provider-specific parameters
-        if "presence_penalty" in payload:
-            litellm_kwargs["presence_penalty"] = payload["presence_penalty"]
-        if "frequency_penalty" in payload:
-            litellm_kwargs["frequency_penalty"] = payload["frequency_penalty"]
-        if "response_format" in payload:
-            litellm_kwargs["response_format"] = payload["response_format"]
+        litellm_kwargs = build_acompletion_kwargs(
+            model=self._get_litellm_model_name(),
+            messages=messages,
+            payload=payload,
+            api_key=self._get_litellm_api_key(),
+            api_base=self._get_litellm_api_base(),
+            timeout=self.config.timeout,
+            stream=False,
+        )
 
         try:
             response = await litellm.acompletion(**litellm_kwargs)
@@ -203,13 +193,12 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     f"{self.provider_name} API returned error: no choices field in response"
                 )
             return response.choices[0].message.content or ""
+        except LLMProviderError:
+            raise
         except Exception as e:
-            # Catch all exceptions and log detailed information
-            error_msg = str(e)
-            if "timeout" in error_msg.lower() or isinstance(e, asyncio.TimeoutError):
-                raise Exception(f"Request timeout (timeout: {self.config.timeout}s): {e}") from e
             logger.exception(f"{self.provider_name} API call failed: {e}")
-            raise LLMProviderError(f"{self.provider_name} API call failed: {error_msg}") from e
+            mapped = map_litellm_exception(e, self.provider_name)
+            raise mapped from e
 
     async def generate_stream(
         self, prompt: str, system_prompt: Optional[str] = None
@@ -228,75 +217,47 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             ValueError: If API key not set
             Exception: If API call fails
         """
-        if not self.api_key:
+        if self._requires_api_key() and not self.api_key:
             raise ValueError(f"{self.provider_name} API key not set")
 
         messages = self._build_messages(prompt, system_prompt)
         payload = self._build_payload(messages, stream=True)
 
-        # Build LiteLLM call parameters
-        litellm_kwargs = {
-            "model": self._get_litellm_model_name(),
-            "messages": messages,
-            "temperature": payload.get("temperature"),
-            "max_tokens": payload.get("max_tokens"),
-            "top_p": payload.get("top_p"),
-            "stream": True,
-            "api_key": self._get_litellm_api_key(),
-            "timeout": self.config.timeout,
-        }
-
-        # Add API base URL (if provided)
-        api_base = self._get_litellm_api_base()
-        if api_base:
-            litellm_kwargs["api_base"] = api_base
-
-        # Add provider-specific parameters
-        if "presence_penalty" in payload:
-            litellm_kwargs["presence_penalty"] = payload["presence_penalty"]
-        if "frequency_penalty" in payload:
-            litellm_kwargs["frequency_penalty"] = payload["frequency_penalty"]
-        if "response_format" in payload:
-            litellm_kwargs["response_format"] = payload["response_format"]
+        litellm_kwargs = build_acompletion_kwargs(
+            model=self._get_litellm_model_name(),
+            messages=messages,
+            payload=payload,
+            api_key=self._get_litellm_api_key(),
+            api_base=self._get_litellm_api_base(),
+            timeout=self.config.timeout,
+            stream=True,
+        )
 
         accumulated_tokens = 0
 
         try:
-            # LiteLLM uses acompletion with stream=True for async streaming calls
-            # 使用 asyncio.wait_for 确保超时机制可靠
-            # 给 litellm 的超时留一些缓冲时间（+5秒）
-            timeout_seconds = self.config.timeout + 5 if self.config.timeout else 65
+            # First await returns the async iterator; chunk timeouts use litellm ``timeout``.
+            stream_timeout = float(self.config.timeout + 5) if self.config.timeout else 65.0
             response_stream = await asyncio.wait_for(
                 litellm.acompletion(**litellm_kwargs),
-                timeout=timeout_seconds
+                timeout=stream_timeout,
             )
-            # 迭代响应流，添加超时检查
-            iteration_start_time = time.time()
             async for chunk in response_stream:
-                # 检查是否超时（在每次迭代时检查）
-                current_time = time.time()
-                elapsed = current_time - iteration_start_time
-                if elapsed > timeout_seconds:
-                    raise asyncio.TimeoutError(
-                        f"Stream iteration timeout after {elapsed:.1f}s (timeout: {timeout_seconds}s)"
-                    )
                 if not chunk or not chunk.choices or len(chunk.choices) == 0:
                     continue
 
                 delta = chunk.choices[0].delta
                 if delta and delta.content:
                     content = delta.content
-                    # Estimate new token count
                     new_tokens = self._estimate_tokens(content)
                     accumulated_tokens += new_tokens
                     yield (content, accumulated_tokens)
+        except LLMProviderError:
+            raise
         except Exception as e:
-            # Catch all exceptions and log detailed information
-            error_msg = str(e)
-            if "timeout" in error_msg.lower() or isinstance(e, asyncio.TimeoutError):
-                raise Exception(f"Request timeout (timeout: {self.config.timeout}s): {e}") from e
             logger.exception(f"{self.provider_name} API call failed: {e}")
-            raise LLMProviderError(f"{self.provider_name} API call failed: {error_msg}") from e
+            mapped = map_litellm_exception(e, self.provider_name)
+            raise mapped from e
 
     # Synchronous methods (for compatibility with ask_llm)
     def call(
@@ -407,12 +368,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             raise RuntimeError("API rate limit exceeded. Please try again later.") from e
         except APIError as e:
             mt = params.get("max_tokens")
-            logger.error(
-                f"API error: {e}  (model={model_name!r}, max_tokens={mt})"
-            )
-            raise RuntimeError(
-                f"API error: {e}  (model={model_name!r}, max_tokens={mt})"
-            ) from e
+            logger.error(f"API error: {e}  (model={model_name!r}, max_tokens={mt})")
+            raise RuntimeError(f"API error: {e}  (model={model_name!r}, max_tokens={mt})") from e
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             raise RuntimeError(f"API call failed: {e}") from e

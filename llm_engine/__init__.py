@@ -35,7 +35,7 @@ from llm_engine.factory import (
 from llm_engine.providers.base import BaseLLMProvider
 from llm_engine.providers.openai_compatible import OpenAICompatibleProvider
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 __all__ = [
     "AnthropicProvider",

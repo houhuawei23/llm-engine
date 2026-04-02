@@ -5,16 +5,15 @@ Automatically selects appropriate provider based on configuration and provides u
 """
 
 import os
-from typing import AsyncIterator, List, Optional, Tuple
+from typing import AsyncIterator, Optional, Tuple
 
 from loguru import logger
+from openai import OpenAI
 
 from llm_engine.config import LLMConfig, LLMProvider
 from llm_engine.config_loader import get_model_info
-from llm_engine.exceptions import LLMProviderError
 from llm_engine.providers.base import BaseLLMProvider
 from llm_engine.providers.openai_compatible import OpenAICompatibleProvider
-from openai import OpenAI
 
 
 class OpenAIProvider(OpenAICompatibleProvider):
@@ -81,9 +80,7 @@ class AnthropicProvider(OpenAICompatibleProvider):
             }
             # Add User-Agent header for Kimi Code API
             if self._is_kimi_code():
-                client_kwargs["default_headers"] = {
-                    "User-Agent": "claude-code/1.0.0"
-                }
+                client_kwargs["default_headers"] = {"User-Agent": "claude-code/1.0.0"}
             self._client = OpenAI(**client_kwargs)
         return self._client
 
@@ -182,92 +179,37 @@ class DeepSeekProvider(OpenAICompatibleProvider):
                 payload["response_format"] = {"type": "json_object"}
 
 
-class OllamaProvider(BaseLLMProvider):
-    """Ollama local model provider"""
+class OllamaProvider(OpenAICompatibleProvider):
+    """Ollama local model provider (via LiteLLM ``ollama/`` routing)."""
 
     def _get_env_api_key(self) -> Optional[str]:
-        """Ollama doesn't need API key"""
         return None
 
+    def _requires_api_key(self) -> bool:
+        return False
+
     def _get_default_base_url(self) -> str:
-        """Get Ollama default API URL"""
         return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        """Generate text using Ollama API (via LiteLLM)"""
-        import litellm
+    def _get_provider_name(self) -> str:
+        return "Ollama"
 
-        # Build message list
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+    def _get_litellm_model_name(self) -> str:
+        return f"ollama/{self.config.model_name}"
 
-        # LiteLLM format: ollama/model_name
-        model_name = f"ollama/{self.config.model_name}"
+    def _get_litellm_api_key(self) -> Optional[str]:
+        return None
 
-        try:
-            response = await litellm.acompletion(
-                model=model_name,
-                messages=messages,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-                top_p=self.config.top_p,
-                api_base=self.base_url,
+    @property
+    def client(self) -> OpenAI:
+        """Sync OpenAI SDK client; Ollama ignores auth so a placeholder key is used."""
+        if self._client is None:
+            self._client = OpenAI(
+                api_key=self.api_key or "ollama",
+                base_url=self.base_url,
                 timeout=self.config.timeout,
             )
-            if not response or not response.choices or len(response.choices) == 0:
-                raise LLMProviderError("Ollama API returned error: no choices field in response")
-            return response.choices[0].message.content or ""
-        except Exception as e:
-            error_msg = str(e)
-            logger.exception(f"Ollama API call failed: {e}")
-            raise LLMProviderError(f"Ollama API call failed: {error_msg}") from e
-
-    async def generate_stream(
-        self, prompt: str, system_prompt: Optional[str] = None
-    ) -> AsyncIterator[Tuple[str, int]]:
-        """Stream generate text using Ollama API (via LiteLLM)"""
-        import litellm
-
-        # Build message list
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        # LiteLLM format: ollama/model_name
-        model_name = f"ollama/{self.config.model_name}"
-
-        accumulated_tokens = 0
-
-        try:
-            # LiteLLM uses acompletion with stream=True for async streaming calls
-            response_stream = await litellm.acompletion(
-                model=model_name,
-                messages=messages,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-                top_p=self.config.top_p,
-                stream=True,
-                api_base=self.base_url,
-                timeout=self.config.timeout,
-            )
-            async for chunk in response_stream:
-                if not chunk or not chunk.choices or len(chunk.choices) == 0:
-                    continue
-
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    content = delta.content
-                    # Estimate new token count
-                    new_tokens = self._estimate_tokens(content)
-                    accumulated_tokens += new_tokens
-                    yield (content, accumulated_tokens)
-        except Exception as e:
-            error_msg = str(e)
-            logger.exception(f"Ollama API call failed: {e}")
-            raise LLMProviderError(f"Ollama API call failed: {error_msg}") from e
+        return self._client
 
 
 class CustomProvider(OpenAICompatibleProvider):

@@ -1,14 +1,14 @@
 """Unit tests for OpenAI compatible provider module."""
 
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from openai import APIError, AuthenticationError, RateLimitError
 
 from llm_engine.config import LLMConfig, LLMProvider
+from llm_engine.engine import CustomProvider, DeepSeekProvider, OpenAIProvider
 from llm_engine.exceptions import LLMProviderError
-from llm_engine.engine import OpenAIProvider, DeepSeekProvider, CustomProvider
 from llm_engine.providers.openai_compatible import OpenAICompatibleProvider
 
 
@@ -113,6 +113,7 @@ class TestOpenAICompatibleProvider:
     @patch("llm_engine.providers.openai_compatible.litellm.acompletion")
     async def test_generate_stream_success(self, mock_acompletion, llm_config):
         """Test successful streaming generation."""
+
         async def mock_stream():
             chunks = [
                 Mock(choices=[Mock(delta=Mock(content="Test"))]),
@@ -138,7 +139,9 @@ class TestOpenAICompatibleProvider:
         mock_acompletion.side_effect = asyncio.TimeoutError("Timeout")
 
         provider = OpenAIProvider(llm_config)
-        with pytest.raises(Exception, match="timeout"):
+        from llm_engine.exceptions import LLMProviderError
+
+        with pytest.raises(LLMProviderError, match="timed out"):
             async for _ in provider.generate_stream("test prompt"):
                 pass
 
@@ -322,17 +325,15 @@ class TestDeepSeekProvider:
             }
         }
         provider = DeepSeekProvider(llm_config)
-        payload = {
-            "messages": [
-                {"role": "user", "content": "Return json format"}
-            ]
-        }
+        payload = {"messages": [{"role": "user", "content": "Return json format"}]}
         provider._add_provider_specific_params(payload)
         assert "response_format" in payload
         assert payload["response_format"] == {"type": "json_object"}
 
     @patch("llm_engine.engine.get_model_info")
-    def test_add_provider_specific_params_without_json_keyword(self, mock_get_model_info, llm_config):
+    def test_add_provider_specific_params_without_json_keyword(
+        self, mock_get_model_info, llm_config
+    ):
         """Test adding provider-specific params without JSON keyword."""
         mock_get_model_info.return_value = {
             "functions": {
@@ -340,11 +341,7 @@ class TestDeepSeekProvider:
             }
         }
         provider = DeepSeekProvider(llm_config)
-        payload = {
-            "messages": [
-                {"role": "user", "content": "Regular prompt"}
-            ]
-        }
+        payload = {"messages": [{"role": "user", "content": "Regular prompt"}]}
         provider._add_provider_specific_params(payload)
         # Should not add response_format if no "json" keyword
         assert "response_format" not in payload

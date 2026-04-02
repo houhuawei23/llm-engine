@@ -1,14 +1,15 @@
 """Unit tests for factory module."""
 
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 from llm_engine.config import LLMProvider
 from llm_engine.exceptions import LLMProviderError
 from llm_engine.factory import (
-    create_provider_from_config,
-    create_provider_adapter,
     ProviderAdapter,
+    create_provider_adapter,
+    create_provider_from_config,
 )
 from llm_engine.providers.base import BaseLLMProvider
 
@@ -296,6 +297,7 @@ class TestProviderAdapter:
         }
         adapter = ProviderAdapter(provider, config_dict)
 
+        provider.call = Mock(return_value="Test")
         original_temp = provider.config.temperature
         adapter.call(prompt="Test", temperature=0.5)
         assert provider.config.temperature == 0.5
@@ -313,6 +315,7 @@ class TestProviderAdapter:
         }
         adapter = ProviderAdapter(provider, config_dict)
 
+        provider.call = Mock(return_value="Test")
         original_model = provider.config.model_name
         adapter.call(prompt="Test", model="deepseek-coder")
         assert provider.config.model_name == "deepseek-coder"
