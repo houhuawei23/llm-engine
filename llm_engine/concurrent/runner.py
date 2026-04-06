@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Tuple, TypeVar
+from typing import Any, Callable, Generic, Sequence, TypeVar
 
 TTask = TypeVar("TTask")
 TResult = TypeVar("TResult")
 
 # Same keyword list as ask_llm batch._is_retryable_error (kept in sync intentionally).
-DEFAULT_TRANSIENT_ERROR_KEYWORDS: Tuple[str, ...] = (
+DEFAULT_TRANSIENT_ERROR_KEYWORDS: tuple[str, ...] = (
     "timeout",
     "connection",
     "network",
@@ -29,7 +29,7 @@ DEFAULT_TRANSIENT_ERROR_KEYWORDS: Tuple[str, ...] = (
 
 def is_transient_error(
     error_message: str,
-    keywords: Optional[Sequence[str]] = None,
+    keywords: Sequence[str] | None = None,
 ) -> bool:
     """
     Return True if *error_message* looks like a transient / retryable failure.
@@ -74,10 +74,10 @@ def run_thread_pool_with_retries(
     error_message: Callable[[TResult], str],
     retry_count_from_result: Callable[[TResult], int],
     is_retryable_error: Callable[[str], bool] = is_transient_error,
-    on_worker_exception: Optional[Callable[[TTask, BaseException], TResult]] = None,
-    on_retry_scheduled: Optional[Callable[[TTask, TResult], None]] = None,
+    on_worker_exception: Callable[[TTask, BaseException], TResult] | None = None,
+    on_retry_scheduled: Callable[[TTask, TResult], None] | None = None,
     order_key: Callable[[TResult], Any] = lambda r: getattr(r, "task_id", 0),
-) -> List[TResult]:
+) -> list[TResult]:
     """
     Run ``worker(task, retry_count)`` for each task in a thread pool.
 
@@ -134,19 +134,19 @@ class ThreadPoolRetryRunner(Generic[TTask, TResult]):
         error_message: Callable[[TResult], str],
         retry_count_from_result: Callable[[TResult], int],
         is_retryable_error: Callable[[str], bool] = is_transient_error,
-        on_worker_exception: Optional[Callable[[TTask, BaseException], TResult]] = None,
-        on_retry_scheduled: Optional[Callable[[TTask, TResult], None]] = None,
+        on_worker_exception: Callable[[TTask, BaseException], TResult] | None = None,
+        on_retry_scheduled: Callable[[TTask, TResult], None] | None = None,
         order_key: Callable[[TResult], Any] = lambda r: getattr(r, "task_id", 0),
-    ) -> List[TResult]:
-        results: List[TResult] = []
-        future_to_task: Dict[Any, TTask] = {}
+    ) -> list[TResult]:
+        results: list[TResult] = []
+        future_to_task: dict[Any, TTask] = {}
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             for t in tasks:
                 fut = executor.submit(worker, t, 0)
                 future_to_task[fut] = t
 
-            retry_queue: List[Tuple[TTask, int]] = []
+            retry_queue: list[tuple[TTask, int]] = []
 
             while future_to_task or retry_queue:
                 if future_to_task:

@@ -35,6 +35,10 @@ LLM Engine 是一个Python库，提供统一的接口来调用多种大语言模
 - **流式输出** - 支持SSE流式响应，实现实时输出效果
 - **Token估算** - 提供Token消耗预估和成本计算功能
 - **类型安全** - 基于Pydantic的配置验证，提供完整的类型提示
+- **🆕 中间件系统** - 可插拔的请求/响应处理管道
+- **🆕 智能缓存** - 精确匹配 + 语义相似度缓存，降低API成本
+- **🆕 可观测性** - 请求指标、成本跟踪、预算告警
+- **🆕 性能优化** - 速率限制、并发控制、连接池
 
 ---
 
@@ -290,6 +294,105 @@ print(f"上下文长度: {model_info.context_length}")
 
 ## 高级功能
 
+### 中间件系统
+
+使用中间件扩展引擎功能：
+
+```python
+from llm_engine import LLMEngine
+from llm_engine.middleware import LoggingMiddleware, TimingMiddleware
+
+# 创建带中间件的引擎
+engine = LLMEngine(
+    config,
+    middleware=[
+        LoggingMiddleware(level="INFO", log_content=True),
+        TimingMiddleware(),
+    ]
+)
+```
+
+内置中间件：
+- `LoggingMiddleware` - 请求/响应日志记录
+- `TimingMiddleware` - 请求耗时统计
+- `RetryMiddleware` - 自动重试机制
+- `ContentFilterMiddleware` - 内容过滤转换
+- `HeaderInjectionMiddleware` - 自定义请求头
+
+### 智能缓存
+
+两阶段缓存系统（精确匹配 + 语义相似度）：
+
+```python
+from llm_engine import LLMEngine
+from llm_engine.caching import CachingMiddleware, CacheConfig
+
+config = CacheConfig(
+    enable_semantic=True,      # 启用语义缓存
+    semantic_threshold=0.9,    # 相似度阈值
+    ttl=3600,                  # 缓存过期时间（秒）
+)
+
+engine = LLMEngine(
+    llm_config,
+    middleware=[CachingMiddleware(config)]
+)
+```
+
+### 可观测性
+
+请求指标和成本跟踪：
+
+```python
+from llm_engine import LLMEngine
+from llm_engine.observability import ObservabilityMiddleware
+
+mw = ObservabilityMiddleware(budget_usd=100.0, alert_threshold=0.8)
+engine = LLMEngine(config, middleware=[mw])
+
+# 获取统计信息
+stats = mw.get_statistics()
+print(f"总成本: ${stats['total_cost_usd']:.2f}")
+print(f"平均延迟: {stats['avg_latency_ms']:.0f}ms")
+```
+
+### 性能优化
+
+速率限制和并发控制：
+
+```python
+from llm_engine import LLMEngine
+from llm_engine.performance import PerformanceMiddleware
+
+mw = PerformanceMiddleware(
+    rate_limiting=True,
+    max_concurrent=20,
+)
+engine = LLMEngine(config, middleware=[mw])
+```
+
+### 组合使用
+
+所有功能可以组合使用：
+
+```python
+from llm_engine import LLMEngine
+from llm_engine.middleware import LoggingMiddleware
+from llm_engine.caching import CachingMiddleware, CacheConfig
+from llm_engine.observability import ObservabilityMiddleware
+from llm_engine.performance import PerformanceMiddleware
+
+engine = LLMEngine(
+    config,
+    middleware=[
+        LoggingMiddleware(),
+        CachingMiddleware(CacheConfig(enable_semantic=True)),
+        ObservabilityMiddleware(budget_usd=100.0),
+        PerformanceMiddleware(max_concurrent=10),
+    ]
+)
+```
+
 ### 自定义提供商
 
 支持任何OpenAI兼容的API端点:
@@ -402,13 +505,27 @@ llm-engine/
 │   ├── engine.py            # LLMEngine主类和各提供商实现
 │   ├── exceptions.py        # 自定义异常类
 │   ├── factory.py           # 提供商工厂函数
+│   ├── caching/             # 缓存系统
+│   │   ├── cache.py         # 核心缓存实现
+│   │   ├── backends.py      # 缓存后端（内存/磁盘/Redis）
+│   │   ├── semantic.py      # 语义相似度缓存
+│   │   └── middleware.py    # 缓存中间件
+│   ├── middleware/          # 中间件框架
+│   │   ├── base.py          # 中间件基类
+│   │   ├── chain.py         # 中间件链
+│   │   └── builtin.py       # 内置中间件
+│   ├── observability/       # 可观测性
+│   │   ├── metrics.py       # 指标收集
+│   │   ├── cost_tracking.py # 成本跟踪
+│   │   └── middleware.py    # 观测中间件
+│   ├── performance/         # 性能优化
+│   │   ├── rate_limiting.py # 速率限制
+│   │   ├── connection_pool.py # 连接池
+│   │   └── middleware.py    # 性能中间件
 │   └── providers/           # 提供商实现
 │       ├── base.py          # 基础提供商抽象类
 │       └── openai_compatible.py  # OpenAI兼容提供商
 ├── tests/                   # 测试目录
-│   ├── conftest.py          # pytest配置和fixture
-│   ├── test_engine.py       # 引擎测试
-│   └── test_providers.py    # 提供商测试
 ├── providers.yml            # 提供商配置文件示例
 ├── pyproject.toml           # 项目配置和依赖
 ├── README.md                # 本文件

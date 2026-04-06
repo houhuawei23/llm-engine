@@ -5,7 +5,7 @@ Automatically selects appropriate provider based on configuration and provides u
 """
 
 import os
-from typing import AsyncIterator, Optional, Tuple
+from typing import TYPE_CHECKING, AsyncIterator, List, Optional, Tuple, Union
 
 from loguru import logger
 from openai import OpenAI
@@ -14,6 +14,9 @@ from llm_engine.config import LLMConfig, LLMProvider
 from llm_engine.config_loader import get_model_info
 from llm_engine.providers.base import BaseLLMProvider
 from llm_engine.providers.openai_compatible import OpenAICompatibleProvider
+
+if TYPE_CHECKING:
+    from llm_engine.middleware import Middleware, MiddlewareChain
 
 
 class OpenAIProvider(OpenAICompatibleProvider):
@@ -238,17 +241,45 @@ class LLMEngine:
     LLM Engine unified interface
 
     Automatically selects appropriate provider based on configuration and provides unified calling interface.
+
+    Supports middleware for request/response processing:
+
+        >>> from llm_engine.middleware import LoggingMiddleware, TimingMiddleware
+        >>> engine = LLMEngine(
+        ...     config,
+        ...     middleware=[LoggingMiddleware(), TimingMiddleware()]
+        ... )
     """
 
-    def __init__(self, config: LLMConfig):
+    def __init__(
+        self,
+        config: LLMConfig,
+        middleware: Optional[Union[List["Middleware"], "MiddlewareChain"]] = None,
+    ):
         """
         Initialize LLM engine
 
         Args:
             config: LLM configuration object
+            middleware: Optional middleware chain or list of middleware instances
         """
         self.config = config
         self.provider = self._create_provider()
+        self._middleware_chain = self._init_middleware(middleware)
+
+    def _init_middleware(
+        self, middleware: Optional[Union[List["Middleware"], "MiddlewareChain"]]
+    ) -> Optional["MiddlewareChain"]:
+        """Initialize middleware chain from list or existing chain."""
+        if middleware is None:
+            return None
+
+        from llm_engine.middleware import MiddlewareChain
+
+        if isinstance(middleware, MiddlewareChain):
+            return middleware
+
+        return MiddlewareChain(middleware)
 
     def _create_provider(self) -> BaseLLMProvider:
         """
@@ -285,13 +316,37 @@ class LLMEngine:
         Returns:
             Generated text
         """
-        return await self.provider.generate_with_retry(prompt, system_prompt)
+        if self._middleware_chain:
+            from llm_engine.middleware import RequestContext, Response
+
+            context = RequestContext(
+                provider=self.provider._get_provider_name().lower().replace(" ", "_"),
+                model=self.config.model_name,
+                messages=self.provider._build_messages(prompt, system_prompt),
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+                top_p=self.config.top_p,
+                stream=False,
+            )
+
+            async def provider_call(ctx: RequestContext) -> Response:
+                content = await self.provider.generate_with_retry(
+                    prompt, system_prompt
+                )
+                return Response(content=content)
+
+            response = await self._middleware_chain.execute(context, provider_call)
+            return response.content
+        else:
+            return await self.provider.generate_with_retry(prompt, system_prompt)
 
     async def stream_generate(
         self, prompt: str, system_prompt: Optional[str] = None
     ) -> AsyncIterator[Tuple[str, int]]:
         """
         Stream generate text
+
+        Note: Middleware is currently not applied to streaming requests.
 
         Args:
             prompt: User prompt
@@ -300,5 +355,11 @@ class LLMEngine:
         Yields:
             (text chunk, accumulated token count) tuple
         """
+        # TODO: Implement middleware support for streaming
         async for chunk in self.provider.generate_stream(prompt, system_prompt):
             yield chunk
+
+    @property
+    def middleware(self) -> Optional["MiddlewareChain"]:
+        """Get the middleware chain if configured."""
+        return self._middleware_chain
