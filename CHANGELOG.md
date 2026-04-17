@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-04-17
+
+### Fixed
+
+- **DeepSeekProvider JSON detection**: Fix incorrect `response_format` injection when prompts contain the word "JSON" in a negative context (e.g., "do NOT output as JSON"). Previously used a naive `"json" in content.lower()` check which matched any mention of JSON, causing DeepSeek Reasoner models to emit raw JSON with chain-of-thought text instead of Markdown. Now uses explicit pattern matching that distinguishes between positive JSON requests ("return json") and negative mentions ("不允许直接以整段 JSON"), satisfying both the DeepSeek API requirement and user intent.
+
+### Contributors
+
+- Fix designed and implemented with assistance from Claude Code (Anthropic).
+
 ## [0.2.0] - 2026-04-06
 
 ### Added
