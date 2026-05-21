@@ -235,7 +235,7 @@ class OllamaProvider(OpenAICompatibleProvider):
         return False
 
     def _get_default_base_url(self) -> str:
-        return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
     def _get_provider_name(self) -> str:
         return "Ollama"
@@ -245,6 +245,10 @@ class OllamaProvider(OpenAICompatibleProvider):
 
     def _get_litellm_api_key(self) -> Optional[str]:
         return None
+
+    def _get_litellm_api_base(self) -> Optional[str]:
+        """Return plain host for LiteLLM (LiteLLM handles ollama routing internally)."""
+        return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
     @property
     def client(self) -> OpenAI:

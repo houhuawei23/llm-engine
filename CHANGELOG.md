@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-05-21
+
+### Fixed
+
+- **OllamaProvider routing**: Fix three bugs in `create_provider_from_config()` that prevented Ollama from working:
+  - Add `OllamaProvider` to factory imports and `"ollama"` to `provider_map` (was missing, fell through to `CustomProvider`).
+  - Skip API key validation for `"ollama"` provider (local server requires no key).
+  - Add `elif api_provider == "ollama": return OllamaProvider(llm_config)` branch before the `CustomProvider` fallback.
+- **Ollama base_url**: Fix 404 error by adding `/v1` suffix to `_get_default_base_url()` for the OpenAI SDK sync path. Add `_get_litellm_api_base()` override returning plain host for LiteLLM async path (LiteLLM handles ollama routing internally).
+- **Ollama default models**: Update from `llama2`/`mistral` to `qwen3.6`/`qwen3.5` in `providers.yml`.
+
+### Contributors
+
+- Fixes designed and implemented with assistance from **Claude Code** (agent) and **deepseek-v4-pro** (model).
+
 ## [0.2.1] - 2026-04-17
 
 ### Fixed

@@ -8,7 +8,13 @@ making it easy to integrate llm_engine with other applications.
 from typing import Any, Dict, List, Optional, Protocol, Union
 
 from llm_engine.config import LLMConfig, LLMProvider
-from llm_engine.engine import AnthropicProvider, CustomProvider, DeepSeekProvider, OpenAIProvider
+from llm_engine.engine import (
+    AnthropicProvider,
+    CustomProvider,
+    DeepSeekProvider,
+    OllamaProvider,
+    OpenAIProvider,
+)
 from llm_engine.providers.base import BaseLLMProvider
 
 
@@ -86,8 +92,9 @@ def create_provider_from_config(
         timeout = getattr(config, "timeout", 60.0)
 
     # Validate required fields
-    if not api_key or api_key in ("your-api-key-here", "placeholder", ""):
-        raise ValueError("API key is required and cannot be a placeholder")
+    if api_provider != "ollama":
+        if not api_key or api_key in ("your-api-key-here", "placeholder", ""):
+            raise ValueError("API key is required and cannot be a placeholder")
 
     if not api_base:
         raise ValueError("API base URL is required")
@@ -105,6 +112,7 @@ def create_provider_from_config(
         "kimi": LLMProvider.ANTHROPIC,  # Kimi Code API uses Anthropic protocol
         "kimi-code": LLMProvider.ANTHROPIC,  # Kimi Code API uses Anthropic protocol
         "qwen": LLMProvider.CUSTOM,  # Qwen uses custom provider
+        "ollama": LLMProvider.OLLAMA,
     }
     provider_enum = provider_map.get(api_provider, LLMProvider.CUSTOM)
 
@@ -128,6 +136,8 @@ def create_provider_from_config(
     elif api_provider in ("anthropic", "kimi", "kimi-code"):
         # Kimi Code API uses Anthropic protocol
         return AnthropicProvider(llm_config)
+    elif api_provider == "ollama":
+        return OllamaProvider(llm_config)
     else:
         # Use CustomProvider for other providers (e.g., qwen)
         return CustomProvider(llm_config)
